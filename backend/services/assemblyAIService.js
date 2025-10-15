@@ -1,56 +1,96 @@
 import { AssemblyAI } from 'assemblyai';
+import fs from 'fs';
 
 class AssemblyAIService {
   constructor(apiKey) {
-    const finalKey = apiKey || '687820f0353e4d0da22ec696de1e97d3';
+    if (!apiKey) {
+      throw new Error('AssemblyAI API key is required');
+    }
     
-    console.log('🔑 AssemblyAI Key being used:', finalKey);
+    this.client = new AssemblyAI({
+      apiKey: apiKey,
+    });
     
-    this.client = new AssemblyAI({ apiKey: finalKey });
+    console.log('✅ AssemblyAI service initialized');
   }
 
-  async transcribeAudio(audioPath) {
+  async transcribeAudio(filePath) {
     try {
       console.log('🎤 Starting AssemblyAI transcription...');
-      
-      const startTime = Date.now();
-      
-      // Upload and transcribe
-      const transcript = await this.client.transcripts.transcribe({
-        audio: audioPath,
-        speaker_labels: true,
-      });
+      console.log('📁 File path:', filePath);
 
-      const processingTime = (Date.now() - startTime) / 1000;
-
-      if (transcript.status === 'error') {
-        throw new Error(`Transcription failed: ${transcript.error}`);
+      // Verify file exists
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${filePath}`);
       }
 
-      console.log(`✅ Transcription completed in ${processingTime}s`);
+      const stats = fs.statSync(filePath);
+      console.log('📊 File size:', stats.size, 'bytes');
+
+      if (stats.size === 0) {
+        throw new Error('File is empty (0 bytes)');
+      }
+
+      // Read file as buffer
+      const audioData = fs.readFileSync(filePath);
+      console.log('✅ File read successfully');
+
+      // Upload to AssemblyAI and transcribe in one step
+      console.log('⬆️ Uploading and transcribing...');
+      
+      const params = {
+        audio: audioData,
+        language_code: 'en',
+      };
+
+      const transcript = await this.client.transcripts.transcribe(params);
+
+      console.log('📊 Transcript status:', transcript.status);
+      console.log('📊 Transcript ID:', transcript.id);
+
+      // Check for errors
+      if (transcript.status === 'error') {
+        console.error('❌ AssemblyAI error:', transcript.error);
+        throw new Error(`AssemblyAI error: ${transcript.error}`);
+      }
+
+      // Check if text exists
+      if (!transcript.text) {
+        console.error('❌ No text in transcript:', JSON.stringify(transcript, null, 2));
+        throw new Error('No transcription text received from AssemblyAI');
+      }
+
+      if (transcript.text.trim() === '') {
+        throw new Error('AssemblyAI returned empty transcription text');
+      }
+
+      console.log('✅ Transcription successful!');
+      console.log('📝 Text preview:', transcript.text.substring(0, 100) + '...');
+      console.log('📝 Text length:', transcript.text.length, 'characters');
+      console.log('⏱️ Audio duration:', transcript.audio_duration, 'seconds');
+      console.log('🎯 Confidence:', transcript.confidence);
 
       return {
-        transcript: transcript.text,
-        speakers: this.formatSpeakers(transcript.utterances),
-        language: transcript.language_code || 'en',
-        duration: processingTime,
-        audioLength: transcript.audio_duration,
+        text: transcript.text,
+        duration: transcript.audio_duration || 0,
+        confidence: transcript.confidence || 0,
+        id: transcript.id,
+        status: transcript.status,
       };
+
     } catch (error) {
-      console.error('❌ AssemblyAI Error:', error.message);
+      console.error('❌ AssemblyAI transcription failed');
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      
+      // Re-throw with more context
+      if (error.response) {
+        console.error('API Response:', error.response);
+        throw new Error(`AssemblyAI API error: ${error.response.data?.error || error.message}`);
+      }
+      
       throw new Error(`Transcription failed: ${error.message}`);
     }
-  }
-
-  formatSpeakers(utterances) {
-    if (!utterances || utterances.length === 0) return null;
-
-    return utterances.map(u => ({
-      speaker: u.speaker,
-      text: u.text,
-      start: u.start,
-      end: u.end,
-    }));
   }
 }
 
