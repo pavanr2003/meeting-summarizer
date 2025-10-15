@@ -1,67 +1,40 @@
-import axios from 'axios';
+const API_URL = 'http://localhost:5000/api/transcription';
 
-// Backend URL
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/transcription';
-
-
-// Create axios instance
-const api = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'multipart/form-data',
-  },
-});
-
-// Upload and process audio
-export const uploadAudio = async (audioFile, onUploadProgress) => {
+export const uploadAudio = async (file) => {
   const formData = new FormData();
-  formData.append('audio', audioFile);
+  formData.append('audio', file);
 
-  try {
-    const response = await api.post('/upload', formData, {
-      onUploadProgress: (progressEvent) => {
-        const percentCompleted = Math.round(
-          (progressEvent.loaded * 100) / progressEvent.total
-        );
-        if (onUploadProgress) {
-          onUploadProgress(percentCompleted);
-        }
-      },
-    });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data?.message || 'Upload failed';
+  const response = await fetch(`${API_URL}/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Upload failed');
   }
+
+  return response.json();
 };
 
-// Get all meetings
-export const getAllMeetings = async () => {
-  try {
-    const response = await api.get('/meetings');
-    return response.data;
-  } catch (error) {
-    throw error.response?.data?.message || 'Failed to fetch meetings';
+export const getMeetings = async () => {
+  const response = await fetch(`${API_URL}/meetings`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch meetings');
   }
+
+  return response.json();
 };
 
-// Get single meeting
-export const getMeeting = async (id) => {
-  try {
-    const response = await api.get(`/meetings/${id}`);
-    return response.data;
-  } catch (error) {
-    throw error.response?.data?.message || 'Failed to fetch meeting';
-  }
-};
-
-// Delete meeting
 export const deleteMeeting = async (id) => {
-  try {
-    const response = await api.delete(`/meetings/${id}`);
-    return response.data;
-  } catch (error) {
-    throw error.response?.data?.message || 'Failed to delete meeting';
-  }
-};
+  const response = await fetch(`${API_URL}/meetings/${id}`, {
+    method: 'DELETE',
+  });
 
-export default api;
+  if (!response.ok) {
+    throw new Error('Failed to delete meeting');
+  }
+
+  return response.json();
+};

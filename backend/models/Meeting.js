@@ -1,62 +1,35 @@
 import mongoose from 'mongoose';
 
-const meetingSchema = new mongoose.Schema({
-  filename: {
-    type: String,
-    required: true,
-  },
-  originalName: {
-    type: String,
-    required: true,
-  },
-  fileSize: {
-    type: Number,
-    required: true,
-  },
-  transcript: {
-    type: String,
-    required: false,
-    default: '',
-  },
-  summary: {
-    overview: {
+const meetingSchema = new mongoose.Schema(
+  {
+    fileName: {
       type: String,
-      default: '',
+      required: true,
     },
-    keyDecisions: {
-      type: [String],
-      default: [],
+    fileSize: {
+      type: Number,
+      required: true,
     },
-    actionItems: {
-      type: [String],
-      default: [],
+    transcription: {
+      type: String,
+      required: true,
     },
-    discussionTopics: {
-      type: [String],
-      default: [],
+    summary: {
+      type: mongoose.Schema.Types.Mixed,
+      required: true,
     },
-    nextSteps: {
-      type: [String],
-      default: [],
+    audioUrl: {
+      type: String,
+    },
+    duration: {
+      type: Number,
+      default: 0,
     },
   },
-  metadata: {
-    transcriptionEngine: String,
-    summarizationEngine: String,
-    processingTime: Number,
-    audioLength: Number,
-    language: String,
-  },
-  status: {
-    type: String,
-    enum: ['processing', 'completed', 'failed'],
-    default: 'processing',
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+  {
+    timestamps: true,
+  }
+);
 
 const Meeting = mongoose.model('Meeting', meetingSchema);
 

@@ -25,12 +25,6 @@ app.get('/', (req, res) => {
     message: '🎙️ Meeting Summarizer API',
     version: '1.0.0',
     status: 'Running',
-    endpoints: {
-      upload: 'POST /api/transcription/upload',
-      meetings: 'GET /api/transcription/meetings',
-      meeting: 'GET /api/transcription/meetings/:id',
-      delete: 'DELETE /api/transcription/meetings/:id',
-    },
   });
 });
 
@@ -39,14 +33,9 @@ app.use('/api/transcription', transcriptionRoutes);
 // Error handler
 app.use(errorHandler);
 
-// Start server (for local development)
+// Start server
 const PORT = process.env.PORT || 5000;
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📍 http://localhost:${PORT}`);
-  });
-}
-
-// Export for Vercel serverless
-export default app;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📍 http://localhost:${PORT}`);
+});
