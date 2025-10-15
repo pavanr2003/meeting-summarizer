@@ -1,0 +1,130 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+class GeminiService {
+  constructor(apiKey) {
+    // Use provided key or fallback to hardcoded key
+    const finalKey = apiKey || 'AIzaSyDx1YmUF5RJ4A95USth9nyRPkEWkCjlbzI';
+    
+    console.log('🔑 Gemini Key being used:', finalKey);
+    
+    this.genAI = new GoogleGenerativeAI(finalKey);
+    // Using stable gemini-1.5-pro instead of experimental model
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    console.log('✅ Gemini Pro initialized successfully');
+  }
+
+  async generateSummary(transcript) {
+    try {
+      console.log('🤖 Generating summary with Gemini...');
+      
+      const prompt = this.createSummaryPrompt(transcript);
+      const result = await this.model.generateContent(prompt);
+      const response = result.response.text();
+
+      const summary = this.parseSummaryResponse(response);
+      
+      console.log('✅ Summary generated successfully');
+      
+      return summary;
+    } catch (error) {
+      console.error('❌ Gemini Error:', error.message);
+      throw new Error(`Summary generation failed: ${error.message}`);
+    }
+  }
+
+  createSummaryPrompt(transcript) {
+    return `You are a professional meeting analyst. Analyze the following meeting transcript and provide a comprehensive, actionable summary.
+
+MEETING TRANSCRIPT:
+${transcript}
+
+INSTRUCTIONS:
+Provide a detailed analysis in the following structure:
+
+1. OVERVIEW (2-3 sentences summarizing the meeting's main purpose and outcome)
+
+2. KEY DECISIONS (List all final decisions made during the meeting)
+
+3. ACTION ITEMS (List specific tasks with format: "Task description [Owner: name if mentioned] [Deadline: date if mentioned]")
+
+4. DISCUSSION TOPICS (List main topics discussed with brief key points for each)
+
+5. NEXT STEPS (List upcoming milestones, follow-ups, or future meetings planned)
+
+FORMAT YOUR RESPONSE EXACTLY AS FOLLOWS:
+
+OVERVIEW:
+[Your overview here]
+
+KEY DECISIONS:
+- [Decision 1]
+- [Decision 2]
+
+ACTION ITEMS:
+- [Action item 1]
+- [Action item 2]
+
+DISCUSSION TOPICS:
+- [Topic 1]: [Key points]
+- [Topic 2]: [Key points]
+
+NEXT STEPS:
+- [Next step 1]
+- [Next step 2]
+
+Be specific, concise, and action-oriented. Focus on extracting actionable information.`;
+  }
+
+  parseSummaryResponse(responseText) {
+    const sections = {
+      overview: '',
+      keyDecisions: [],
+      actionItems: [],
+      discussionTopics: [],
+      nextSteps: [],
+    };
+
+    let currentSection = null;
+    const lines = responseText.split('\n');
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      if (!trimmedLine) continue;
+
+      // Detect section headers
+      if (trimmedLine.toUpperCase().includes('OVERVIEW:')) {
+        currentSection = 'overview';
+        continue;
+      } else if (trimmedLine.toUpperCase().includes('KEY DECISION')) {
+        currentSection = 'keyDecisions';
+        continue;
+      } else if (trimmedLine.toUpperCase().includes('ACTION ITEM')) {
+        currentSection = 'actionItems';
+        continue;
+      } else if (trimmedLine.toUpperCase().includes('DISCUSSION TOPIC')) {
+        currentSection = 'discussionTopics';
+        continue;
+      } else if (trimmedLine.toUpperCase().includes('NEXT STEP')) {
+        currentSection = 'nextSteps';
+        continue;
+      }
+
+      // Add content to appropriate section
+      if (currentSection === 'overview') {
+        sections.overview += trimmedLine + ' ';
+      } else if (currentSection && trimmedLine.startsWith('-')) {
+        const content = trimmedLine.substring(1).trim();
+        if (content) {
+          sections[currentSection].push(content);
+        }
+      }
+    }
+
+    sections.overview = sections.overview.trim();
+
+    return sections;
+  }
+}
+
+export default GeminiService;
