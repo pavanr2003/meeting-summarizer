@@ -1,14 +1,11 @@
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
+import os from 'os';
 
-// Create uploads directory if it doesn't exist
-const uploadDir = 'uploads';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// Use /tmp directory (only writable location in serverless)
+const uploadDir = '/tmp/uploads';
 
-// Configure storage
+// Configure storage for serverless
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
@@ -36,7 +33,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage,
   limits: {
-    fileSize: process.env.MAX_FILE_SIZE || 104857600,
+    fileSize: 104857600, // 100MB
   },
   fileFilter,
 });
