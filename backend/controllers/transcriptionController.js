@@ -1,112 +1,102 @@
 import asyncHandler from 'express-async-handler';
-import fs from 'fs/promises';
+import fs from 'fs';
 import Meeting from '../models/Meeting.js';
 import AssemblyAIService from '../services/assemblyAIService.js';
 import HuggingFaceService from '../services/huggingFaceService.js';
 
 // Initialize services
-const assemblyAI = new AssemblyAIService(process.env.ASSEMBLYAI_API_KEY);
-const huggingFace = new HuggingFaceService(process.env.HUGGINGFACE_API_KEY);
+const assemblyAIService = new AssemblyAIService(process.env.ASSEMBLYAI_API_KEY);
+const huggingFaceService = new HuggingFaceService(process.env.HUGGINGFACE_API_KEY);
 
 // @desc    Upload and process audio file
 // @route   POST /api/transcription/upload
 // @access  Public
-export const uploadAndProcess = asyncHandler(async (req, res) => {
-  const startTime = Date.now();
-
-  if (!req.file) {
-    res.status(400);
-    throw new Error('No audio file uploaded');
-  }
-
-  const { filename, originalname, size, path: filePath } = req.file;
-
-  let meeting;
-
+export const uploadAudio = asyncHandler(async (req, res) => {
   try {
-    // Create meeting record
-    meeting = await Meeting.create({
-      filename,
-      originalName: originalname,
-      fileSize: size,
-      transcript: '',
-      status: 'processing',
+    // Check if file was uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No audio file provided',
+      });
+    }
+
+    console.log('📁 File uploaded:', req.file.filename);
+    console.log('📍 File path:', req.file.path);
+    console.log('📊 File size:', req.file.size, 'bytes');
+
+    // Verify file exists
+    if (!fs.existsSync(req.file.path)) {
+      throw new Error(`File not found after upload: ${req.file.path}`);
+    }
+
+    // Start transcription
+    console.log('🎤 Starting transcription with AssemblyAI...');
+    const transcriptionResult = await assemblyAIService.transcribeAudio(req.file.path);
+
+    if (!transcriptionResult || !transcriptionResult.text) {
+      throw new Error('Transcription failed - no text received from AssemblyAI');
+    }
+
+    console.log('✅ Transcription completed');
+    console.log('📝 Transcript length:', transcriptionResult.text.length, 'characters');
+    console.log('🤖 Generating summary with HuggingFace...');
+
+    // Generate summary
+    const summary = await huggingFaceService.generateSummary(transcriptionResult.text);
+
+    console.log('✅ Summary generated');
+
+    // Save to database
+    const meeting = await Meeting.create({
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      transcription: transcriptionResult.text,
+      summary,
+      audioUrl: req.file.path,
+      duration: transcriptionResult.duration || 0,
     });
 
-    // Transcribe with AssemblyAI
-    const transcriptionResult = await assemblyAI.transcribeAudio(filePath);
+    console.log('💾 Meeting saved to database with ID:', meeting._id);
 
-    // Generate summary with HuggingFace
-    const summary = await huggingFace.generateSummary(transcriptionResult.transcript);
-
-    // Calculate total processing time
-    const processingTime = (Date.now() - startTime) / 1000;
-
-    // Update meeting record
-    meeting.transcript = transcriptionResult.transcript;
-    meeting.summary = summary;
-    meeting.metadata = {
-      transcriptionEngine: 'AssemblyAI',
-      summarizationEngine: 'HuggingFace BART',
-      processingTime,
-      audioLength: transcriptionResult.audioLength,
-      language: transcriptionResult.language,
-    };
-    meeting.status = 'completed';
-    await meeting.save();
-
-    // Delete uploaded file
-    await fs.unlink(filePath);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        id: meeting._id,
-        filename: meeting.originalName,
-        transcript: meeting.transcript,
-        summary: meeting.summary,
-        metadata: meeting.metadata,
-        createdAt: meeting.createdAt,
-      },
-    });
-  } catch (error) {
-    console.error('❌ PROCESSING ERROR:', error);
-    
-    // Clean up file on error
+    // Clean up temporary file
     try {
-      if (filePath) {
-        await fs.unlink(filePath);
-        console.log('🗑️ Cleaned up file after error');
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+        console.log('🗑️ Temporary file deleted:', req.file.path);
       }
     } catch (cleanupError) {
-      console.error('Failed to cleanup file:', cleanupError.message);
+      console.error('⚠️ Cleanup error (non-critical):', cleanupError.message);
     }
 
-    // Update meeting status to failed if it was created
-    try {
-      if (meeting) {
-        meeting.status = 'failed';
-        await meeting.save();
-      }
-    } catch (saveError) {
-      console.error('Failed to update meeting status:', saveError.message);
-    }
+    // Return response
+    res.status(201).json({
+      success: true,
+      message: 'Audio processed successfully',
+      data: meeting,
+    });
 
-    // Send detailed error response
-    let errorMessage = 'Processing failed';
+  } catch (error) {
+    console.error('❌ Upload/Processing error:', error.message);
+    console.error('Stack trace:', error.stack);
     
-    if (error.message.includes('API key')) {
-      errorMessage = 'Invalid API key. Please check your AssemblyAI or HuggingFace API key.';
-    } else if (error.message.includes('quota')) {
-      errorMessage = 'API quota exceeded. Please wait or upgrade your plan.';
-    } else if (error.message.includes('network') || error.message.includes('ECONNREFUSED')) {
-      errorMessage = 'Network error. Please check your internet connection.';
-    } else {
-      errorMessage = error.message;
+    // Clean up file on error
+    if (req.file && req.file.path) {
+      try {
+        if (fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+          console.log('🗑️ Cleaned up file after error');
+        }
+      } catch (cleanupError) {
+        console.error('⚠️ Cleanup error:', cleanupError.message);
+      }
     }
 
-    res.status(500);
-    throw new Error(errorMessage);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to process audio',
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    });
   }
 });
 
@@ -114,49 +104,103 @@ export const uploadAndProcess = asyncHandler(async (req, res) => {
 // @route   GET /api/transcription/meetings
 // @access  Public
 export const getAllMeetings = asyncHandler(async (req, res) => {
-  const meetings = await Meeting.find()
-    .sort({ createdAt: -1 })
-    .select('-__v');
+  try {
+    const meetings = await Meeting.find()
+      .sort({ createdAt: -1 })
+      .select('-transcription'); // Exclude full transcription for list view
 
-  res.status(200).json({
-    success: true,
-    count: meetings.length,
-    data: meetings,
-  });
+    console.log('📋 Retrieved', meetings.length, 'meetings');
+
+    res.status(200).json({
+      success: true,
+      count: meetings.length,
+      data: meetings,
+    });
+  } catch (error) {
+    console.error('❌ Error getting meetings:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve meetings',
+      error: error.message,
+    });
+  }
 });
 
-// @desc    Get single meeting
+// @desc    Get single meeting by ID
 // @route   GET /api/transcription/meetings/:id
 // @access  Public
-export const getMeeting = asyncHandler(async (req, res) => {
-  const meeting = await Meeting.findById(req.params.id);
+export const getMeetingById = asyncHandler(async (req, res) => {
+  try {
+    const meeting = await Meeting.findById(req.params.id);
 
-  if (!meeting) {
-    res.status(404);
-    throw new Error('Meeting not found');
+    if (!meeting) {
+      return res.status(404).json({
+        success: false,
+        message: 'Meeting not found',
+      });
+    }
+
+    console.log('📄 Retrieved meeting:', meeting._id);
+
+    res.status(200).json({
+      success: true,
+      data: meeting,
+    });
+  } catch (error) {
+    console.error('❌ Error getting meeting:', error.message);
+    
+    if (error.kind === 'ObjectId') {
+      return res.status(404).json({
+        success: false,
+        message: 'Meeting not found - invalid ID',
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve meeting',
+      error: error.message,
+    });
   }
-
-  res.status(200).json({
-    success: true,
-    data: meeting,
-  });
 });
 
 // @desc    Delete meeting
 // @route   DELETE /api/transcription/meetings/:id
 // @access  Public
 export const deleteMeeting = asyncHandler(async (req, res) => {
-  const meeting = await Meeting.findById(req.params.id);
+  try {
+    const meeting = await Meeting.findById(req.params.id);
 
-  if (!meeting) {
-    res.status(404);
-    throw new Error('Meeting not found');
+    if (!meeting) {
+      return res.status(404).json({
+        success: false,
+        message: 'Meeting not found',
+      });
+    }
+
+    await meeting.deleteOne();
+
+    console.log('🗑️ Deleted meeting:', meeting._id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Meeting deleted successfully',
+      data: { id: req.params.id },
+    });
+  } catch (error) {
+    console.error('❌ Error deleting meeting:', error.message);
+    
+    if (error.kind === 'ObjectId') {
+      return res.status(404).json({
+        success: false,
+        message: 'Meeting not found - invalid ID',
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete meeting',
+      error: error.message,
+    });
   }
-
-  await meeting.deleteOne();
-
-  res.status(200).json({
-    success: true,
-    message: 'Meeting deleted successfully',
-  });
 });
