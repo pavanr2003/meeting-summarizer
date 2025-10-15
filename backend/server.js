@@ -44,3 +44,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 http://localhost:${PORT}`);
 });
+// Export for Vercel serverless
+export default app;
