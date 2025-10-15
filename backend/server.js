@@ -24,6 +24,7 @@ app.get('/', (req, res) => {
   res.json({
     message: '🎙️ Meeting Summarizer API',
     version: '1.0.0',
+    status: 'Running',
     endpoints: {
       upload: 'POST /api/transcription/upload',
       meetings: 'GET /api/transcription/meetings',
@@ -38,11 +39,14 @@ app.use('/api/transcription', transcriptionRoutes);
 // Error handler
 app.use(errorHandler);
 
-// Start server
+// Start server (for local development)
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📍 http://localhost:${PORT}`);
+  });
+}
+
 // Export for Vercel serverless
 export default app;
